@@ -10,14 +10,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
-# 1. Inicialização segura do Firebase
-cred = credentials.Certificate("firebase_key.json")
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+import os
+import json
 
+firebase_json = os.environ.get("FIREBASE_CONFIG")
 
-
+if firebase_json:
+    try:
+        # Tenta converter o texto para dicionário
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
+        
+        # Só inicializa se não houver nenhum app rodando
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+        
+        db = firestore.client()
+        print("Firebase conectado com sucesso!")
+    except Exception as e:
+        print(f"Erro ao iniciar Firebase: {e}")
 
 
 
