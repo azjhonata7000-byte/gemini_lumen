@@ -16,6 +16,8 @@ app = FastAPI()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
+API_GEMINI = os.getenv("API_GEMINI")
+
 
 if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY não configurada.")
@@ -23,9 +25,12 @@ if not GEMINI_API_KEY:
 if not MONGO_URI:
     raise RuntimeError("MONGO_URI não configurada.")
 
+if not API_GEMINI:
+    raise RuntimeError("API_GEMINI não configurada.")
+
 # Configura Gemini
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel(API_GEMINI)
 
 # Conecta Mongo
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
