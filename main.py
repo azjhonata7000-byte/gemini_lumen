@@ -14,6 +14,9 @@ from datetime import datetime
 
 app = FastAPI()
 
+db = None
+model = None
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
 API_GEMINI = os.getenv("API_GEMINI")
@@ -72,10 +75,10 @@ class EstruturaRequest(BaseModel):
 @app.get("/")
 def home():
     return {
-        "status": "Lumen Studio Online 🍃",
-        "db_conectado": db is not None
+        "status": "Lumen Studio Online com MongoDB 🍃",
+        "db_conectado": db is not None,
+        "gemini_configurada": model is not None
     }
-
 # -------- Estrutura --------
 
 @app.get("/estrutura")
