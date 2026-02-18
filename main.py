@@ -5,29 +5,40 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 from datetime import datetime
 
+# -------------------------
+# CONFIGURAÇÃO INICIAL
+# -------------------------
+
 app = FastAPI()
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
 
-print("GEMINI_API_KEY:", GEMINI_API_KEY)
-print("MONGO_URI:", MONGO_URI)
-
 if not GEMINI_API_KEY:
-    print("ERRO: GEMINI_API_KEY não carregada")
+    raise RuntimeError("GEMINI_API_KEY não configurada.")
 
 if not MONGO_URI:
-    print("ERRO: MONGO_URI não carregada")
+    raise RuntimeError("MONGO_URI não configurada.")
 
-# Só configura se existir
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# Configura Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Só conecta se existir
-if MONGO_URI:
-    client = MongoClient(MONGO_URI)
-    db = client["lumen_studio"]
+# Conecta Mongo
+client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+db = client["lumen_studio"]
+
+# Criar índices (seguro rodar sempre)
+db.mensagens.create_index("chat_id")
+db.mensagens.create_index([("chat_id", 1), ("timestamp", 1)])
+
+# -------------------------
+# CORS
+# -------------------------
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,6 +46,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# -------------------------
+# MODELS
+# -------------------------
 
 class MensagemRequest(BaseModel):
     projeto: str
@@ -45,66 +60,128 @@ class MensagemRequest(BaseModel):
 class EstruturaRequest(BaseModel):
     arvore: dict
 
-# --- 4. ROTAS ---
+# -------------------------
+# ROTAS
+# -------------------------
+
 @app.get("/")
 def home():
-    return {"status": "Lumen Studio Online com MongoDB 🍃", "db_conectado": db is not None}
+    return {
+        "status": "Lumen Studio Online 🍃",
+        "db_conectado": db is not None
+    }
+
+# -------- Estrutura --------
 
 @app.get("/estrutura")
 def carregar_estrutura():
     try:
-        if db is None: raise Exception("Banco não conectado.")
         doc = db.sistema.find_one({"_id": "estrutura_projetos"})
         return doc.get("arvore", {}) if doc else {}
-    except Exception as e:
+    except PyMongoError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/estrutura")
 def salvar_estrutura(req: EstruturaRequest):
     try:
-        if db is None: raise Exception("Banco não conectado.")
         db.sistema.update_one(
-            {"_id": "estrutura_projetos"}, 
-            {"$set": {"arvore": req.arvore}}, 
+            {"_id": "estrutura_projetos"},
+            {"$set": {"arvore": req.arvore}},
             upsert=True
         )
         return {"status": "sucesso"}
-    except Exception as e:
+    except PyMongoError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# -------- Histórico --------
 
 @app.get("/historico/{projeto}/{pasta}/{chat_id}")
 def obter_historico(projeto: str, pasta: str, chat_id: str):
     try:
-        if db is None: raise Exception("Banco não conectado.")
         caminho_chat = f"{projeto}/{pasta}/{chat_id}"
-        
-        docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
-        historico = [{"role": msg["role"], "texto": msg["texto"]} for msg in docs]
+
+        docs = list(
+            db.mensagens
+            .find({"chat_id": caminho_chat})
+            .sort("timestamp", 1)
+        )
+
+        historico = [
+            {"role": msg.get("role"), "texto": msg.get("texto")}
+            for msg in docs
+        ]
+
         return {"historico": historico}
-    except Exception as e:
+
+    except PyMongoError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# -------- Chat --------
 
 @app.post("/enviar_mensagem")
 def enviar_mensagem(req: MensagemRequest):
-    try:
-        if db is None: raise Exception("Banco não conectado.")
-        caminho_chat = f"{req.projeto}/{req.pasta}/{req.chat_id}"
 
-        docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
-        historico_formatado = [{"role": msg["role"], "parts": [msg["texto"]]} for msg in docs]
-            
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt vazio.")
+
+    caminho_chat = f"{req.projeto}/{req.pasta}/{req.chat_id}"
+
+    try:
+        # 🔥 Limita histórico para evitar estouro de token
+        docs = list(
+            db.mensagens
+            .find({"chat_id": caminho_chat})
+            .sort("timestamp", -1)
+            .limit(20)
+        )
+
+        docs.reverse()
+
+        historico_formatado = [
+            {
+                "role": msg.get("role"),
+                "parts": [msg.get("texto", "")]
+            }
+            for msg in docs
+        ]
+
         chat = model.start_chat(history=historico_formatado)
-        resposta_gemini = chat.send_message(req.prompt)
-        texto_resposta = resposta_gemini.text if resposta_gemini.text else "Sem texto."
+        resposta = chat.send_message(req.prompt)
+
+        texto_resposta = getattr(resposta, "text", None)
+        if not texto_resposta:
+            texto_resposta = "Sem texto retornado pelo modelo."
+
+        timestamp = datetime.utcnow()
 
         db.mensagens.insert_many([
-            {"chat_id": caminho_chat, "role": "user", "texto": req.prompt, "timestamp": datetime.utcnow()},
-            {"chat_id": caminho_chat, "role": "model", "texto": texto_resposta, "timestamp": datetime.utcnow()}
+            {
+                "chat_id": caminho_chat,
+                "role": "user",
+                "texto": req.prompt,
+                "timestamp": timestamp
+            },
+            {
+                "chat_id": caminho_chat,
+                "role": "model",
+                "texto": texto_resposta,
+                "timestamp": timestamp
+            }
         ])
-        
+
         return {"resposta": texto_resposta}
+
+    except PyMongoError as mongo_err:
+        raise HTTPException(status_code=500, detail=f"Erro MongoDB: {str(mongo_err)}")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+
+# -------------------------
+# MAIN
+# -------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
