@@ -13,26 +13,23 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
 
+
 firebase_json = os.environ.get("FIREBASE_CONFIG")
 
 if firebase_json:
-    try:
-        # Tenta converter o texto para dicionário
-        cred_dict = json.loads(firebase_json)
-        cred = credentials.Certificate(cred_dict)
+    cred_dict = json.loads(firebase_json)
+    
+    # ESTA LINHA É A CURA PARA O ERRO 500:
+    if "private_key" in cred_dict:
+        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
         
-        # Só inicializa se não houver nenhum app rodando
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-        
-        db = firestore.client()
-        print("Firebase conectado com sucesso!")
-    except Exception as e:
-        print(f"Erro ao iniciar Firebase: {e}")
+    cred = credentials.Certificate(cred_dict)
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
 
 
 
-
+db = firestore.client()
 
 
 
