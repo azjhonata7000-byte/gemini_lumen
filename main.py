@@ -11,7 +11,7 @@ app = FastAPI()
 
 # --- 1. CONFIGURAÇÃO DO MONGODB ---
 MONGO_URI = os.environ.get("MONGO_URI")
-db = None
+
 
 if MONGO_URI:
     try:
