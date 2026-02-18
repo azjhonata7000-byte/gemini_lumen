@@ -7,8 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from datetime import datetime
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # --- 1. CONFIGURAÇÃO DO MONGODB ---
-MONGO_URI = "mongodb+srv://azjhonata5000_db_user:SVDkZNq79c7op2PM@cluster0.5ibkjnd.mongodb.net/?appName=Cluster0"
+MONGO_URI = os.environ.get("MONGO_URI")
 db = None
 
 if MONGO_URI:
@@ -23,7 +26,7 @@ else:
     print("⚠️ MONGO_URI não encontrada nas variáveis de ambiente.")
 
 # --- 2. CONFIGURAÇÃO DO GEMINI ---
-GENAI_API_KEY = "AIzaSyDqr0dTxPmEpYe6u-dw8ZCIxWxgNo3vg0o"
+GENAI_API_KEY = os.environ.get("GEMINI_API_KEY") 
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel('gemini-3-flash-preview')
