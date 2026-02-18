@@ -158,7 +158,7 @@ async def enviar_mensagem(req: MensagemRequest):
         chat = model.start_chat(history=historico_formatado)
         
         # 🚀 MUDANÇA CRÍTICA: Usando a versão assíncrona da chamada da API
-        resposta = await chat.send_message_async(req.prompt)
+        resposta = chat.send_message(req.prompt)
 
         texto_resposta = getattr(resposta, "text", "Sem texto retornado pelo modelo.")
 
