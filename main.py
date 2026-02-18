@@ -24,9 +24,9 @@ if MONGO_URI:
 
 # --- 2. CONFIGURAÇÃO DO GEMINI ---
 # Coloque sua chave nas variáveis do Railway para segurança
-GENAI_API_KEY = os.environ.get("GEMINI_API_KEY", "SUA_CHAVE_AQUI") 
+GENAI_API_KEY = os.environ.get("GEMINI_API_KEY") 
 genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 # --- 3. FASTAPI ---
 app = FastAPI()
