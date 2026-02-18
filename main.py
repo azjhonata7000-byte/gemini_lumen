@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from datetime import datetime
 
-
+app = FastAPI()
 
 # --- 1. CONFIGURAÇÃO DO MONGODB ---
 MONGO_URI = os.environ.get("MONGO_URI")
@@ -31,7 +31,17 @@ if GENAI_API_KEY:
 model = genai.GenerativeModel('gemini-3-flash-preview')
 
 # --- 3. FASTAPI ---
-app = FastAPI()
+
+
+
+@app.get("/debug-env")
+def debug_env():
+    import os
+    return {
+        "gemini_is_none": os.getenv("GEMINI_API_KEY") is None,
+        "mongo_is_none": os.getenv("MONGO_URI") is None,
+        "mongo_length": len(os.getenv("MONGO_URI") or "")
+    }
 
 app.add_middleware(
     CORSMiddleware,
