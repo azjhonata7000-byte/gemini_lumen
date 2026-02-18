@@ -32,9 +32,8 @@ if not API_GEMINI:
     raise RuntimeError("API_GEMINI não configurada.")
 
 # Configura Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY, transport="rest") # 🚀 A MÁGICA ESTÁ AQUI
 model = genai.GenerativeModel(API_GEMINI)
-
 # Conecta Mongo
 client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
 db = client["lumen_studio"]
