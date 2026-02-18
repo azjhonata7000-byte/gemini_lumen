@@ -7,8 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from datetime import datetime
 
-from dotenv import load_dotenv
-load_dotenv()
+
 
 # --- 1. CONFIGURAÇÃO DO MONGODB ---
 MONGO_URI = os.environ.get("MONGO_URI")
