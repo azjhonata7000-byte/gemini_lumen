@@ -127,23 +127,25 @@ def obter_historico(projeto: str, pasta: str, chat_id: str):
 
 # -------- Chat --------
 
-@app.post("/enviar_mensagem")
-def enviar_mensagem(req: MensagemRequest):
+# Adicione esta importação no topo do seu arquivo se ainda não tiver:
+import asyncio
 
+@app.post("/enviar_mensagem")
+async def enviar_mensagem(req: MensagemRequest):
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt vazio.")
 
     caminho_chat = f"{req.projeto}/{req.pasta}/{req.chat_id}"
 
     try:
-        # 🔥 Limita histórico para evitar estouro de token
+        # 🔥 Busca o histórico no Mongo (Em um cenário ideal futuro, use Motor assíncrono para o Mongo também)
+        # O list() aqui é síncrono, mas rápido o suficiente para não ser o gargalo de 1 minuto.
         docs = list(
             db.mensagens
             .find({"chat_id": caminho_chat})
             .sort("timestamp", -1)
             .limit(20)
         )
-
         docs.reverse()
 
         historico_formatado = [
@@ -155,37 +157,26 @@ def enviar_mensagem(req: MensagemRequest):
         ]
 
         chat = model.start_chat(history=historico_formatado)
-        resposta = chat.send_message(req.prompt)
+        
+        # 🚀 MUDANÇA CRÍTICA: Usando a versão assíncrona da chamada da API
+        resposta = await chat.send_message_async(req.prompt)
 
-        texto_resposta = getattr(resposta, "text", None)
-        if not texto_resposta:
-            texto_resposta = "Sem texto retornado pelo modelo."
+        texto_resposta = getattr(resposta, "text", "Sem texto retornado pelo modelo.")
 
         timestamp = datetime.utcnow()
 
+        # Inserção no banco
         db.mensagens.insert_many([
-            {
-                "chat_id": caminho_chat,
-                "role": "user",
-                "texto": req.prompt,
-                "timestamp": timestamp
-            },
-            {
-                "chat_id": caminho_chat,
-                "role": "model",
-                "texto": texto_resposta,
-                "timestamp": timestamp
-            }
+            {"chat_id": caminho_chat, "role": "user", "texto": req.prompt, "timestamp": timestamp},
+            {"chat_id": caminho_chat, "role": "model", "texto": texto_resposta, "timestamp": timestamp}
         ])
 
         return {"resposta": texto_resposta}
 
     except PyMongoError as mongo_err:
         raise HTTPException(status_code=500, detail=f"Erro MongoDB: {str(mongo_err)}")
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
-
 
 # -------------------------
 # MAIN
