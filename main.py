@@ -7,6 +7,10 @@ import os
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+
 # 1. Inicialização segura do Firebase
 cred = credentials.Certificate("firebase_key.json")
 if not firebase_admin._apps:
@@ -26,7 +30,17 @@ GENAI_API_KEY = "AIzaSyDqr0dTxPmEpYe6u-dw8ZCIxWxgNo3vg0o"
 genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel('gemini-3-flash-preview')
 
-app = FastAPI(title="API Gemini Dracula")
+
+# O nome TEM que ser 'app' para a Vercel reconhecer automaticamente
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 
