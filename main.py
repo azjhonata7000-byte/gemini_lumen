@@ -8,24 +8,24 @@ from pymongo import MongoClient
 from datetime import datetime
 
 # --- 1. CONFIGURAÇÃO DO MONGODB ---
-# A URI que você vai colar no painel do Railway
 MONGO_URI = os.environ.get("MONGO_URI")
 db = None
 
 if MONGO_URI:
     try:
-        # Conecta ao MongoDB com timeout seguro de 5 segundos
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        db = client["lumen_studio"] # Cria o banco automaticamente
-        client.admin.command('ping') # Testa a conexão
+        db = client["lumen_studio"]
+        client.admin.command('ping')
         print("🍃 MongoDB Conectado com Sucesso!")
     except Exception as e:
         print(f"❌ Erro na conexão com MongoDB: {e}")
+else:
+    print("⚠️ MONGO_URI não encontrada nas variáveis de ambiente.")
 
 # --- 2. CONFIGURAÇÃO DO GEMINI ---
-# Coloque sua chave nas variáveis do Railway para segurança
 GENAI_API_KEY = os.environ.get("GEMINI_API_KEY") 
-genai.configure(api_key=GENAI_API_KEY)
+if GENAI_API_KEY:
+    genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel('gemini-3-flash-preview')
 
 # --- 3. FASTAPI ---
@@ -51,13 +51,12 @@ class EstruturaRequest(BaseModel):
 # --- 4. ROTAS ---
 @app.get("/")
 def home():
-    return {"status": "Lumen Studio Online com MongoDB 🍃"}
+    return {"status": "Lumen Studio Online com MongoDB 🍃", "db_conectado": db is not None}
 
 @app.get("/estrutura")
 def carregar_estrutura():
     try:
         if db is None: raise Exception("Banco não conectado.")
-        # Busca o documento de estrutura (ID fixo)
         doc = db.sistema.find_one({"_id": "estrutura_projetos"})
         return doc.get("arvore", {}) if doc else {}
     except Exception as e:
@@ -67,7 +66,6 @@ def carregar_estrutura():
 def salvar_estrutura(req: EstruturaRequest):
     try:
         if db is None: raise Exception("Banco não conectado.")
-        # Salva ou atualiza a estrutura de pastas
         db.sistema.update_one(
             {"_id": "estrutura_projetos"}, 
             {"$set": {"arvore": req.arvore}}, 
@@ -83,7 +81,6 @@ def obter_historico(projeto: str, pasta: str, chat_id: str):
         if db is None: raise Exception("Banco não conectado.")
         caminho_chat = f"{projeto}/{pasta}/{chat_id}"
         
-        # Busca mensagens ordenadas por data
         docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
         historico = [{"role": msg["role"], "texto": msg["texto"]} for msg in docs]
         return {"historico": historico}
@@ -96,7 +93,6 @@ def enviar_mensagem(req: MensagemRequest):
         if db is None: raise Exception("Banco não conectado.")
         caminho_chat = f"{req.projeto}/{req.pasta}/{req.chat_id}"
 
-        # Recupera histórico para o Gemini
         docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
         historico_formatado = [{"role": msg["role"], "parts": [msg["texto"]]} for msg in docs]
             
@@ -104,7 +100,6 @@ def enviar_mensagem(req: MensagemRequest):
         resposta_gemini = chat.send_message(req.prompt)
         texto_resposta = resposta_gemini.text if resposta_gemini.text else "Sem texto."
 
-        # Salva a pergunta e a resposta de uma vez só
         db.mensagens.insert_many([
             {"chat_id": caminho_chat, "role": "user", "texto": req.prompt, "timestamp": datetime.utcnow()},
             {"chat_id": caminho_chat, "role": "model", "texto": texto_resposta, "timestamp": datetime.utcnow()}
