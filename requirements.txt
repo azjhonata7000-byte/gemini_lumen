@@ -1,4 +1,4 @@
 fastapi
 uvicorn
 google-generativeai
-firebase-admin
+pymongo

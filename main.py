@@ -1,46 +1,34 @@
 import os
-# --- A MAGIA CONTRA O CONGELAMENTO NO RAILWAY ---
-os.environ["GRPC_DNS_RESOLVER"] = "native"
-
-import json
 import uvicorn
-import firebase_admin
-from firebase_admin import credentials, firestore
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo import MongoClient
+from datetime import datetime
 
-# --- 1. CONFIGURAÇÃO DO FIREBASE ---
-firebase_json = os.environ.get("FIREBASE_CONFIG")
+# --- 1. CONFIGURAÇÃO DO MONGODB ---
+# A URI que você vai colar no painel do Railway
+MONGO_URI = os.environ.get("MONGO_URI")
 db = None
 
-if firebase_json:
+if MONGO_URI:
     try:
-        firebase_json = firebase_json.strip().strip("'").strip('"')
-        cred_dict = json.loads(firebase_json)
-        
-        if "private_key" in cred_dict:
-            key = cred_dict["private_key"]
-            key = key.replace("\\\\n", "\n").replace("\\n", "\n")
-            cred_dict["private_key"] = key
-            
-        cred = credentials.Certificate(cred_dict)
-        
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-            
-        db = firestore.client()
-        print("🔥 Firebase Conectado com Sucesso!")
+        # Conecta ao MongoDB com timeout seguro de 5 segundos
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        db = client["lumen_studio"] # Cria o banco automaticamente
+        client.admin.command('ping') # Testa a conexão
+        print("🍃 MongoDB Conectado com Sucesso!")
     except Exception as e:
-        print(f"❌ Erro na autenticação: {e}")
+        print(f"❌ Erro na conexão com MongoDB: {e}")
 
 # --- 2. CONFIGURAÇÃO DO GEMINI ---
-GENAI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDqr0dTxPmEpYe6u-dw8ZCIxWxgNo3vg0o") 
+# Coloque sua chave nas variáveis do Railway para segurança
+GENAI_API_KEY = os.environ.get("GEMINI_API_KEY", "SUA_CHAVE_AQUI") 
 genai.configure(api_key=GENAI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- 3. CONFIGURAÇÃO DO FASTAPI ---
+# --- 3. FASTAPI ---
 app = FastAPI()
 
 app.add_middleware(
@@ -63,23 +51,28 @@ class EstruturaRequest(BaseModel):
 # --- 4. ROTAS ---
 @app.get("/")
 def home():
-    return {"status": "Lumen Studio Online no Railway 🚂"}
+    return {"status": "Lumen Studio Online com MongoDB 🍃"}
 
 @app.get("/estrutura")
 def carregar_estrutura():
     try:
-        if not db: raise Exception("Banco não conectado.")
-        # Timeout impede o loop infinito
-        doc = db.collection('sistema').document('estrutura').get(timeout=10)
-        return doc.to_dict().get("arvore", {}) if doc.exists else {}
+        if db is None: raise Exception("Banco não conectado.")
+        # Busca o documento de estrutura (ID fixo)
+        doc = db.sistema.find_one({"_id": "estrutura_projetos"})
+        return doc.get("arvore", {}) if doc else {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/estrutura")
 def salvar_estrutura(req: EstruturaRequest):
     try:
-        if not db: raise Exception("Banco não conectado.")
-        db.collection('sistema').document('estrutura').set({"arvore": req.arvore}, timeout=10)
+        if db is None: raise Exception("Banco não conectado.")
+        # Salva ou atualiza a estrutura de pastas
+        db.sistema.update_one(
+            {"_id": "estrutura_projetos"}, 
+            {"$set": {"arvore": req.arvore}}, 
+            upsert=True
+        )
         return {"status": "sucesso"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -87,25 +80,35 @@ def salvar_estrutura(req: EstruturaRequest):
 @app.get("/historico/{projeto}/{pasta}/{chat_id}")
 def obter_historico(projeto: str, pasta: str, chat_id: str):
     try:
-        mensagens_ref = db.collection(f'projetos/{projeto}/pastas/{pasta}/conversas/{chat_id}/mensagens')
-        docs = mensagens_ref.order_by('timestamp').stream(timeout=10)
-        return {"historico": [{"role": msg.get("role", "user"), "texto": msg.get("texto", "")} for msg in (doc.to_dict() for doc in docs)]}
+        if db is None: raise Exception("Banco não conectado.")
+        caminho_chat = f"{projeto}/{pasta}/{chat_id}"
+        
+        # Busca mensagens ordenadas por data
+        docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
+        historico = [{"role": msg["role"], "texto": msg["texto"]} for msg in docs]
+        return {"historico": historico}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/enviar_mensagem")
 def enviar_mensagem(req: MensagemRequest):
     try:
-        mensagens_ref = db.collection(f'projetos/{req.projeto}/pastas/{req.pasta}/conversas/{req.chat_id}/mensagens')
-        docs = mensagens_ref.order_by('timestamp').stream(timeout=10)
-        historico_formatado = [{"role": msg.get("role", "user"), "parts": [msg.get("texto", "")]} for msg in (doc.to_dict() for doc in docs)]
+        if db is None: raise Exception("Banco não conectado.")
+        caminho_chat = f"{req.projeto}/{req.pasta}/{req.chat_id}"
+
+        # Recupera histórico para o Gemini
+        docs = db.mensagens.find({"chat_id": caminho_chat}).sort("timestamp", 1)
+        historico_formatado = [{"role": msg["role"], "parts": [msg["texto"]]} for msg in docs]
             
         chat = model.start_chat(history=historico_formatado)
         resposta_gemini = chat.send_message(req.prompt)
         texto_resposta = resposta_gemini.text if resposta_gemini.text else "Sem texto."
 
-        mensagens_ref.add({"role": "user", "texto": req.prompt, "timestamp": firestore.SERVER_TIMESTAMP})
-        mensagens_ref.add({"role": "model", "texto": texto_resposta, "timestamp": firestore.SERVER_TIMESTAMP})
+        # Salva a pergunta e a resposta de uma vez só
+        db.mensagens.insert_many([
+            {"chat_id": caminho_chat, "role": "user", "texto": req.prompt, "timestamp": datetime.utcnow()},
+            {"chat_id": caminho_chat, "role": "model", "texto": texto_resposta, "timestamp": datetime.utcnow()}
+        ])
         
         return {"resposta": texto_resposta}
     except Exception as e:
