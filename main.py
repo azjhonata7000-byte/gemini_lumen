@@ -19,28 +19,21 @@ import json
 firebase_json = os.environ.get("FIREBASE_CONFIG")
 db = None
 if firebase_json:
-    try:
-        cred_dict = json.loads(firebase_json)
-        
-        # A CURA DEFINITIVA: 
-        # A Vercel lê "\n" como texto puro. Esta linha transforma em quebra de linha real.
-        if "private_key" in cred_dict:
-            cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
-            
-        cred = credentials.Certificate(cred_dict)
-        
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-            
-        db = firestore.client()
-        print("Autenticação JWT corrigida e Firebase conectado!")
-        
-    except Exception as e:
-        print(f"Erro crítico na chave: {e}")
-        
+    # Limpa aspas extras que a Vercel às vezes coloca nas pontas
+    firebase_json = firebase_json.strip().strip("'").strip('"')
     
-    # Agora o db é definido para todo o arquivo usar
-    db = firestore.client()
+    cred_dict = json.loads(firebase_json)
+    
+    # Resolve o problema das quebras de linha na chave privada
+    if "private_key" in cred_dict:
+        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
+        
+    cred = credentials.Certificate(cred_dict)
+    
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 
 # 2. Configuração do Gemini
