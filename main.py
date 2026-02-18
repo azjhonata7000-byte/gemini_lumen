@@ -19,22 +19,29 @@ import json
 firebase_json = os.environ.get("FIREBASE_CONFIG")
 db = None
 if firebase_json:
-    # Limpa aspas extras que a Vercel às vezes coloca nas pontas
-    firebase_json = firebase_json.strip().strip("'").strip('"')
-    
-    cred_dict = json.loads(firebase_json)
-    
-    # Resolve o problema das quebras de linha na chave privada
-    if "private_key" in cred_dict:
-        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
+    try:
+        # 1. Limpa espaços e aspas extras das pontas
+        firebase_json = firebase_json.strip().strip("'").strip('"')
         
-    cred = credentials.Certificate(cred_dict)
-    
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-
-db = firestore.client()
-
+        cred_dict = json.loads(firebase_json)
+        
+        # 2. TRATAMENTO ULTRA-SEGURO DA CHAVE PRIVADA
+        if "private_key" in cred_dict:
+            # Remove escapes duplos e garante que \n seja uma quebra de linha real
+            key = cred_dict["private_key"]
+            key = key.replace("\\\\n", "\n").replace("\\n", "\n")
+            cred_dict["private_key"] = key
+            
+        cred = credentials.Certificate(cred_dict)
+        
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+            
+        db = firestore.client()
+        print("Firebase Conectado com Sucesso!")
+        
+    except Exception as e:
+        print(f"Erro na autenticação: {e}")
 
 # 2. Configuração do Gemini
 # DICA: Embora eu seja o Gemini 3 Flash, no SDK do Google o nome do modelo 
