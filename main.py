@@ -15,22 +15,29 @@ import json
 
 
 # Busca a chave que você configurou no painel da Vercel
+# Busca a variável que você colou no painel da Vercel
 firebase_json = os.environ.get("FIREBASE_CONFIG")
-
-# Cria a variável db como None primeiro
 db = None
-
 if firebase_json:
-    cred_dict = json.loads(firebase_json)
-    
-    # Esta linha é vital para a Vercel não dar erro de autenticação
-    if "private_key" in cred_dict:
-        cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
+    try:
+        cred_dict = json.loads(firebase_json)
         
-    cred = credentials.Certificate(cred_dict)
-    
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
+        # A CURA DEFINITIVA: 
+        # A Vercel lê "\n" como texto puro. Esta linha transforma em quebra de linha real.
+        if "private_key" in cred_dict:
+            cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
+            
+        cred = credentials.Certificate(cred_dict)
+        
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+            
+        db = firestore.client()
+        print("Autenticação JWT corrigida e Firebase conectado!")
+        
+    except Exception as e:
+        print(f"Erro crítico na chave: {e}")
+        
     
     # Agora o db é definido para todo o arquivo usar
     db = firestore.client()
