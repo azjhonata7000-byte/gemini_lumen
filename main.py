@@ -14,23 +14,26 @@ import os
 import json
 
 
+# Busca a chave que você configurou no painel da Vercel
 firebase_json = os.environ.get("FIREBASE_CONFIG")
+
+# Cria a variável db como None primeiro
+db = None
 
 if firebase_json:
     cred_dict = json.loads(firebase_json)
     
-    # ESTA LINHA É A CURA PARA O ERRO 500:
+    # Esta linha é vital para a Vercel não dar erro de autenticação
     if "private_key" in cred_dict:
         cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
         
     cred = credentials.Certificate(cred_dict)
+    
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
-
-
-
-db = firestore.client()
-
+    
+    # Agora o db é definido para todo o arquivo usar
+    db = firestore.client()
 
 
 # 2. Configuração do Gemini
