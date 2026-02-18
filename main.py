@@ -1,4 +1,7 @@
 import os
+# --- A MAGIA CONTRA O CONGELAMENTO NO RAILWAY ---
+os.environ["GRPC_DNS_RESOLVER"] = "native"
+
 import json
 import uvicorn
 import firebase_admin
@@ -35,7 +38,7 @@ if firebase_json:
 # --- 2. CONFIGURAÇÃO DO GEMINI ---
 GENAI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyDqr0dTxPmEpYe6u-dw8ZCIxWxgNo3vg0o") 
 genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-3-flash-preview')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- 3. CONFIGURAÇÃO DO FASTAPI ---
 app = FastAPI()
@@ -57,7 +60,7 @@ class MensagemRequest(BaseModel):
 class EstruturaRequest(BaseModel):
     arvore: dict
 
-# --- 4. ROTAS (SEM ASYNC PARA EVITAR DEADLOCK DO FIREBASE) ---
+# --- 4. ROTAS ---
 @app.get("/")
 def home():
     return {"status": "Lumen Studio Online no Railway 🚂"}
@@ -66,7 +69,8 @@ def home():
 def carregar_estrutura():
     try:
         if not db: raise Exception("Banco não conectado.")
-        doc = db.collection('sistema').document('estrutura').get()
+        # Timeout impede o loop infinito
+        doc = db.collection('sistema').document('estrutura').get(timeout=10)
         return doc.to_dict().get("arvore", {}) if doc.exists else {}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -75,7 +79,7 @@ def carregar_estrutura():
 def salvar_estrutura(req: EstruturaRequest):
     try:
         if not db: raise Exception("Banco não conectado.")
-        db.collection('sistema').document('estrutura').set({"arvore": req.arvore})
+        db.collection('sistema').document('estrutura').set({"arvore": req.arvore}, timeout=10)
         return {"status": "sucesso"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -84,7 +88,7 @@ def salvar_estrutura(req: EstruturaRequest):
 def obter_historico(projeto: str, pasta: str, chat_id: str):
     try:
         mensagens_ref = db.collection(f'projetos/{projeto}/pastas/{pasta}/conversas/{chat_id}/mensagens')
-        docs = mensagens_ref.order_by('timestamp').stream()
+        docs = mensagens_ref.order_by('timestamp').stream(timeout=10)
         return {"historico": [{"role": msg.get("role", "user"), "texto": msg.get("texto", "")} for msg in (doc.to_dict() for doc in docs)]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,7 +97,7 @@ def obter_historico(projeto: str, pasta: str, chat_id: str):
 def enviar_mensagem(req: MensagemRequest):
     try:
         mensagens_ref = db.collection(f'projetos/{req.projeto}/pastas/{req.pasta}/conversas/{req.chat_id}/mensagens')
-        docs = mensagens_ref.order_by('timestamp').stream()
+        docs = mensagens_ref.order_by('timestamp').stream(timeout=10)
         historico_formatado = [{"role": msg.get("role", "user"), "parts": [msg.get("texto", "")]} for msg in (doc.to_dict() for doc in docs)]
             
         chat = model.start_chat(history=historico_formatado)
