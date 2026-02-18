@@ -8,41 +8,26 @@ from pymongo import MongoClient
 from datetime import datetime
 
 app = FastAPI()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MONGO_URI = os.getenv("MONGO_URI")
 
-# --- 1. CONFIGURAÇÃO DO MONGODB ---
-MONGO_URI = os.environ.get("MONGO_URI")
+print("GEMINI_API_KEY:", GEMINI_API_KEY)
+print("MONGO_URI:", MONGO_URI)
 
+if not GEMINI_API_KEY:
+    print("ERRO: GEMINI_API_KEY não carregada")
 
+if not MONGO_URI:
+    print("ERRO: MONGO_URI não carregada")
+
+# Só configura se existir
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+# Só conecta se existir
 if MONGO_URI:
-    try:
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        db = client["lumen_studio"]
-        client.admin.command('ping')
-        print("🍃 MongoDB Conectado com Sucesso!")
-    except Exception as e:
-        print(f"❌ Erro na conexão com MongoDB: {e}")
-else:
-    print("⚠️ MONGO_URI não encontrada nas variáveis de ambiente.")
-
-# --- 2. CONFIGURAÇÃO DO GEMINI ---
-GENAI_API_KEY = os.environ.get("GEMINI_API_KEY") 
-if GENAI_API_KEY:
-    genai.configure(api_key=GENAI_API_KEY)
-model = genai.GenerativeModel('gemini-3-flash-preview')
-
-# --- 3. FASTAPI ---
-
-
-
-@app.get("/debug-env")
-def debug_env():
-    import os
-    return {
-        "gemini_is_none": os.getenv("GEMINI_API_KEY") is None,
-        "mongo_is_none": os.getenv("MONGO_URI") is None,
-        "mongo_length": len(os.getenv("MONGO_URI") or "")
-    }
-
+    client = MongoClient(MONGO_URI)
+    db = client["lumen_studio"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
