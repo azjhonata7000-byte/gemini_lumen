@@ -6,7 +6,6 @@ from pydantic import BaseModel
 import os
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +15,10 @@ cred = credentials.Certificate("firebase_key.json")
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
+
+
+
+
 
 
 
@@ -33,6 +36,10 @@ model = genai.GenerativeModel('gemini-3-flash-preview')
 
 # O nome TEM que ser 'app' para a Vercel reconhecer automaticamente
 app = FastAPI()
+
+@app.get("/")
+def home():
+    return {"status": "Lumen Studio Online"}
 
 app.add_middleware(
     CORSMiddleware,
